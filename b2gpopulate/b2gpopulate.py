@@ -30,8 +30,8 @@ class B2GPopulate:
         self.data_layer = GaiaData(self.marionette)
         self.device = GaiaDevice(self.marionette)
 
-    def populate(self, contact_count=0, message_count=0, music_count=0,
-                 picture_count=0, video_count=0):
+    def populate(self, call_count=0, contact_count=0, message_count=0,
+                 music_count=0, picture_count=0, video_count=0):
 
         if self.device.is_android_build:
             media_files = self.data_layer.media_files
@@ -42,6 +42,9 @@ class B2GPopulate:
                 media_files = self.data_layer.media_files
             if not len(media_files) == 0:
                 raise CountError('media files', 0, len(media_files))
+
+        if call_count:
+            self.populate_calls(call_count)
 
         if contact_count:
             self.populate_contacts(contact_count)
@@ -57,6 +60,27 @@ class B2GPopulate:
 
         if video_count > 0:
             self.populate_files('videos', 'VID_0001.3gp', video_count, 'sdcard/DCIM/100MZLLA')
+
+    def populate_calls(self, count):
+        # only allow preset db values for calls
+        db_calls_counts = [0, 200, 500, 1000, 2000]
+        if not count in db_message_counts:
+            raise Exception('Invalid value for message count, use one of: %s' % ', '.join([str(count) for count in db_message_counts]))
+        progress = ProgressBar(widgets=['Messages: ', '[', Counter(), '/%d] ' % count], maxval=count)
+        progress.start()
+        db_message_counts.sort(reverse=True)
+        for marker in db_message_counts:
+            if count >= marker:
+                db_zip = ZipFile(pkg_resources.resource_filename(__name__, os.path.sep.join(['resources', 'smsDb.zip'])))
+                db = db_zip.extract('smsDb-%d.sqlite' % marker)
+                self.device.stop_b2g()
+                self.device.push_file(db, destination='data/local/indexedDB/chrome/226660312ssm.sqlite')
+                os.remove(db)
+                self.device.start_b2g()
+                progress.update(marker)
+                progress.finish()
+                break
+    # type, label, local dbname, remote dbname
 
     def populate_contacts(self, count):
         progress = ProgressBar(widgets=['Contacts: ', '[', Counter(), '/%d] ' % count], maxval=count)
@@ -125,6 +149,26 @@ class B2GPopulate:
 
         progress.finish()
 
+    def populate_database(self, type, label, count, resource_prefix, dbname):
+        # only allow preset db values
+        db_preset_counts = [0, 200, 500, 1000, 2000]
+        if not count in db_preset_counts:
+            raise Exception('Invalid value for %s count, use one of: %s' % (type, ', '.join([str(count) for count in db_message_counts])))
+        progress = ProgressBar(widgets=['%s: ' % label, '[', Counter(), '/%d] ' % count], maxval=count)
+        progress.start()
+        db_preset_counts.sort(reverse=True)
+        for marker in db_preset_counts:
+            if count >= marker:
+                db_zip = ZipFile(pkg_resources.resource_filename(__name__, os.path.sep.join(['resources', '%s.zip' % resource_prefix])))
+                db = db_zip.extract('%s-%d.sqlite' % (resource_prefix, marker))
+                self.device.stop_b2g()
+                self.device.push_file(db, destination='data/local/indexedDB/chrome/%s.sqlite' % dbname)
+                os.remove(db)
+                self.device.start_b2g()
+                progress.update(marker)
+                progress.finish()
+                break
+
     def populate_files(self, file_type, source, count, destination=''):
         progress = ProgressBar(
             widgets=['%s: ' % file_type.capitalize(), '[', Counter(), '/%d] ' % count],
@@ -140,6 +184,13 @@ class B2GPopulate:
 
 def cli():
     parser = OptionParser(usage='%prog [options]')
+    parser.add_option(
+        '--calls',
+        action='store',
+        type=int,
+        dest='call_count',
+        metavar='int',
+        help='number of calls to create. must be one of: 0, 200, 500, 1000, 2000')
     parser.add_option(
         '--contacts',
         action='store',
@@ -179,7 +230,7 @@ def cli():
 
     options, args = parser.parse_args()
 
-    data_types = ['contact', 'message', 'music', 'picture', 'video']
+    data_types = ['call', 'contact', 'message', 'music', 'picture', 'video']
     for data_type in data_types:
         count = getattr(options, '%s_count' % data_type)
         if count and not count >= 0:
@@ -193,17 +244,21 @@ def cli():
         print 'must specify at least one item to populate'
         parser.exit()
 
-    # only allow preset db values for messages
-    db_message_counts = [0, 200, 500, 1000, 2000]
-    if options.message_count and not options.message_count in db_message_counts:
-        parser.print_usage()
-        print 'invalid value for message count, use one of: %s' % ', '.join([str(count) for count in db_message_counts])
-        parser.exit()
+    # only allow preset db values for calls and messages
+    db_preset_types = ['call', 'message']
+    db_preset_counts = [0, 200, 500, 1000, 2000]
+    for data_type in db_preset_types:
+        count = getattr(options, '%s_count' % data_type)
+        if count and not count in db_preset_counts:
+            parser.print_usage()
+            print 'invalid value for %s count, use one of: %s' % (data_type, ', '.join([str(count) for count in db_preset_counts]))
+            parser.exit()
 
     # TODO command line option for address
     marionette = Marionette(host='localhost', port=2828, timeout=180000)
     marionette.start_session()
     B2GPopulate(marionette).populate(
+        options.call_count,
         options.contact_count,
         options.message_count,
         options.music_count,
