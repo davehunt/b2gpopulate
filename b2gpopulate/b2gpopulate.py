@@ -49,9 +49,6 @@ class InvalidCountError(B2GPopulateError):
 
 
 class B2GPopulate(object):
-
-    PERSISTENT_STORAGE_PATH = '/data/local/storage/persistent'
-
     handler = mozlog.StreamHandler()
     handler.setFormatter(mozlog.MozFormatter(include_timestamp=True))
     logger = mozlog.getLogger('B2GPopulate', handler)
@@ -63,13 +60,22 @@ class B2GPopulate(object):
         dm = mozdevice.DeviceManagerADB()
         self.device.add_device_manager(dm)
 
+        for path in ['/data/local/storage/persistent',
+                     '/data/local/indexedDB']:
+            if dm.fileExists(path):
+                self.persistent_storage_path = path
+                break
+        else:
+            raise B2GPopulateError(
+                'Unable to determine persistent storage path')
+
         self.logger.setLevel(getattr(mozlog, log_level.upper()))
         self.start_timeout = start_timeout
 
         if self.device.is_android_build:
             self.idb_dir = 'idb'
             for candidate in self.device.manager.listFiles(
-                    '/'.join([self.PERSISTENT_STORAGE_PATH, 'chrome'])):
+                    '/'.join([self.persistent_storage_path, 'chrome'])):
                 if re.match('\d.*idb', candidate):
                     self.idb_dir = candidate
                     break
@@ -128,7 +134,7 @@ class B2GPopulate(object):
                 db = ZipFile(db_zip_name).extract(db_name)
                 if restart:
                     self.device.stop_b2g()
-                destination = '/'.join([self.PERSISTENT_STORAGE_PATH,
+                destination = '/'.join([self.persistent_storage_path,
                                         '%s+f+app+++%s' % (local_id, key),
                                         self.idb_dir,
                                         '2584670174dsitanleecreR.sqlite'])
@@ -146,7 +152,7 @@ class B2GPopulate(object):
         if not count in db_counts:
             raise InvalidCountError('contact')
         self.device.manager.removeDir('/'.join([
-            self.PERSISTENT_STORAGE_PATH, 'chrome',
+            self.persistent_storage_path, 'chrome',
             self.idb_dir, '*csotncta*']))
         self.logger.info('Populating %d contacts' % count)
         db_counts.sort(reverse=True)
@@ -162,7 +168,7 @@ class B2GPopulate(object):
                 if restart:
                     self.device.stop_b2g()
                 destination = '/'.join([
-                    self.PERSISTENT_STORAGE_PATH, 'chrome', self.idb_dir,
+                    self.persistent_storage_path, 'chrome', self.idb_dir,
                     '3406066227csotncta.sqlite'])
                 self.logger.debug('Pushing %s to %s' % (db, destination))
                 self.device.push_file(db, destination=destination)
@@ -178,7 +184,7 @@ class B2GPopulate(object):
                         pictures_zip_name, temp))
                     ZipFile(pictures_zip_name).extractall(temp)
                     destination = '/'.join([
-                        self.PERSISTENT_STORAGE_PATH, 'chrome', self.idb_dir,
+                        self.persistent_storage_path, 'chrome', self.idb_dir,
                         '3406066227csotncta'])
                     self.logger.debug('Pushing %s to %s' % (temp, destination))
                     self.device.manager.pushDir(temp, destination)
@@ -209,7 +215,7 @@ class B2GPopulate(object):
                 db = ZipFile(db_zip_name).extract(db_name)
                 if restart:
                     self.device.stop_b2g()
-                destination = '/'.join([self.PERSISTENT_STORAGE_PATH,
+                destination = '/'.join([self.persistent_storage_path,
                                         '%s+f+app+++%s' % (local_id, key),
                                         self.idb_dir,
                                         '125582036br2agd-nceal.sqlite'])
@@ -239,7 +245,7 @@ class B2GPopulate(object):
                 if restart:
                     self.device.stop_b2g()
                 destination = '/'.join([
-                    self.PERSISTENT_STORAGE_PATH, 'chrome', self.idb_dir,
+                    self.persistent_storage_path, 'chrome', self.idb_dir,
                     '226660312ssm.sqlite'])
                 self.logger.debug('Pushing %s to %s' % (db, destination))
                 self.device.push_file(db, destination=destination)
@@ -259,7 +265,7 @@ class B2GPopulate(object):
                         attachments_zip, temp))
                     ZipFile(attachments_zip).extractall(temp)
                     destination = '/'.join([
-                        self.PERSISTENT_STORAGE_PATH, 'chrome', self.idb_dir,
+                        self.persistent_storage_path, 'chrome', self.idb_dir,
                         '226660312ssm'])
                     self.logger.debug('Pushing %s to %s' % (temp, destination))
                     self.device.manager.pushDir(temp, destination)
